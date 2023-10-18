@@ -1,4 +1,5 @@
 import requests
+import sys
 
 def update_jira_status(jira_id):
     jira_credentials = "zeeshan:'Anything'"
@@ -71,6 +72,4 @@ def update_jira_status(jira_id):
         sys.exit(1)
 
 def main(argv):
-    jira_id = ""
-
-    try:
+    jira_id =

@@ -1,65 +1,66 @@
-pipeline {
-    agent any
+@Library('iota_lib') _
 
-    triggers {
-        cron('00 8 * * 4') // Schedule the pipeline to run every Thursday at 8:00 AM IST
-    }
+createWorker() {
+    stage('Check for New Commits and Update YAML') {
 
-    stages {
-        stage('Check for New Commits and Update YAML') {
-            steps {
-                script {
-                    def mainBranch = 'main'
-                    def sanityBranch = 'sanity-test'
-                    def ClusterBlueprintPath = 'cd-cluster/clusters/scl/qscl02/cck8s1-qscl02-sanity/flux-system/cluster-blueprint.yaml'
+        def mainBranch = "main"
+        def sanityBranch = "sanity-test"
+    
+        // Fetch the latest changes from the remote repository
+        timeout(30) {
+            withCredentials([]) {
+                sh "git config --global --add safe.directory ${WORKSPACE}"
+            }
 
-                    // Fetch the latest changes from the remote repository
-                    checkout([$class: 'GitSCM', branches: [[name: "refs/heads/${mainBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[url: 'https://github.com/yourusername/yourrepository.git']]])
+            checkout([$class: 'GitSCM', branches: [[name: "refs/heads/${mainBranch}"]], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[url: 'https://github.com/yourusername/yourrepository.git']]])
 
-                    // Get the commit hashes of the last commit on main and sanity-test branches
-                    def mainCommit = sh(script: "git log -1 --format=%H origin/${mainBranch}", returnStdout: true).trim()
-                    def sanityCommit = sh(script: "git log -1 --format=%H origin/${sanityBranch}", returnStdout: true).trim()
+            // Get the commit hashes of the last commit on main and sanity-test branches
+            def mainCommit = sh(script: "git log -1 --format=%H origin/${mainBranch}", returnStdout: true).trim()
+            def sanityCommit = sh(script: "git log -1 --format=%H origin/${sanityBranch}", returnStdout: true).trim()
 
-                    // Check if there are any new commits on main compared to sanity-test
-                    if (mainCommit != sanityCommit) {
-                        echo "New commits found on ${mainBranch} branch. Triggering the build..."
+            // Check if there are any new commits on main compared to sanity-test
+            if (mainCommit != sanityCommit) {
+                echo "New commits found on ${mainBranch} branch. Triggering the build..."
 
-                        // check if the cluster Blueprint fie is exists
-                        def exists = fileExists(ClusterBlueprintPath)
-
-                        if (exists) {
-                            // Read the current content and update the cluster Blueprint file
-                            def currentContent = readFile(ClusterBlueprintPath)
-                            def branchName = ClusterBlueprintPath =~ /\/([^/]+)\/flux-system\/cluster-blueprint.yaml/ ? ~/$1/ : "master"
-                            def newContent = currentContent.replace(/branch: .*$/, "branch: ${branchName}")
-                            
-                            // update the cluster blueprint file
-                            writeFile file: ClusterBlueprintPath, text: newContent
-
-
-                        // Customize this block to execute the necessary build and deployment steps
-                    } else {
-                        echo "No new commits on ${mainBranch} branch. Skipping the build."
-                    }
+                // Checkout and merge the sanity branch into the main branch
+                withCredentials([])  {
+                    sh "git reset --hard HEAD"
+                    sh "git checkout ${mainBranch}"
+                    sh "git pull origin ${mainBranch}"
+                    sh "git checkout ${sanityBranch}"
+                    sh "git merge ${mainBranch}"
                 }
+
+            } else {
+                echo "No new commits on ${mainBranch} branch. Skipping the build."
             }
         }
     }
-}
+
+    stage("Replacing the branch") {
+
+        checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: 'https://github.com/iota/cd-clusters.git']]])
+
+        def parentDirs = sh(script: "find . -type d -iname 'cck8s1-qscl02-sanity-*' -printf '%p\n'", returnStdout: true).trim().split("\n")
+
+        println "Processing directory: ${parentDirs}"
+
+        for (def parentDir in parentDirs) {
+            def targetPath = "${parentDir}/flux-system"
+            def newContent = parentDir
+
+            println "Processing directory: ${parentDir}"
+            println "Target Path : ${targetPath}"
+
+            sh "python3 -c \"import yaml; data= yaml.safe_load(open('${targetPath}')); data['branch'] = '${newContent}'; yaml.dump(data.open('${targetPath}', 'w'))\""
+
+            def actualContent = sh(script: "cat ${targetPath}", returnStdout: true, returnstatus: true).trim()
 
 
-
-
-properties ([
-    disableConcurrentBuilds(),
-    pipelineTriggers([
-        issueCommentTriggers(triggerCommands)
-    ])
-])
-
-try {
-    if (!env.CHANGE_BRANCH) {
-        println "skipping "
-        return
+            if (actualContent.contains("branch: ${newContent}")) {
+                println("Verification Failed for directory: ${parentDir}")
+                error("Verification failed")
+            }
+        }
     }
 }

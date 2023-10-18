@@ -5,6 +5,8 @@ def call(Map config = [:]) {
   def status = 0
   def diffblueTimeLimit = config.get('diffblueTimeLimit', 360).toInteger()
   boolean runDiffblue = config.get('runDiffblue', false)
+  boolean forceRunDiffblue = config.get('forceRunDiffblue', false)
+  
 
   properties ([
     disableConcurrentBuilds(),
@@ -32,20 +34,22 @@ def call(Map config = [:]) {
         }
         stage('Diffblue') {
             timeout(diffblueTimeLimit) {
-                if (runDiffblue) {
-                    def forceRunDiffblue = config.get('forceRunDiffblue', false)
-
-                    if (forceRunDiffblue || env.DIFFBLUE_SKIPPED != 'true') {
-                      def statusCode = diffblue(testFramework: testFramework)
-                      status = statusCode
-                      if (statusCode == 1) {
+                // check the last build result
+                def lastBuild = currentBuild.previousBuild
+                def skipDiffblue = false
+                if (lastBuild && lastBuild.description == "DiffblueRan") {
+                  skipDiffblue = true
+                }
+                if (runDiffblue !skipDiffblue) {
+                    def statusCode = diffblue(testFramework: testFramework)
+                    status = statusCode
+                    if (statusCode == 1) {
                         error 'failing in Diffblue stage'
-                      }
-                    } else {
-                      echo "Skipping Diffblue as a previous run was successful"
                     }
+                } else if (skipDiffblue) {
+                  println "Diffblue stage is passed in previous run skipping..."
                 } else {
-                    echo "Skipping Diffblue run as it was not enabled in jenkinsfile"
+                  println "skipping diffblue run as it was not enabled in jenkinsfile"
                 }
             }
         }

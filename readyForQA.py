@@ -15,6 +15,7 @@ def check_kubernetes_deployment(jira_id, kube_config_path):
     deployment_name = "cdr-mediation-parser"
 
     # Initialize the Kubernetes API client
+
     apps_v1_api = client.AppsV1Api()
 
     try:
@@ -66,7 +67,7 @@ def update_jira_status(jira_id):
         if update_response.status_code == 204:
             print(f"Status of {jira_id} changed to ReadyForQA")
         else:
-            print(f"ERROR: Status of {jira_id} could not be moved to ReadyForQA. Exiting.")
+            print(f"ERROR: Status of {jira_id} could not be moved to ReadyForQA")
             sys.exit(1)
 
 def main(argv):
@@ -92,7 +93,7 @@ def main(argv):
 
     print(f"ID is {jira_id}")
 
-    if jira_id in ["CC-120222", "CC-104616", "CC-39782", "CC-0000", "CC-00000", "CC-000000"]:
+    if jira_id in ["CC-0000", "CC-00000", "CC-000000"]:
         sys.exit()
 
     # Check the Kubernetes deployment status
